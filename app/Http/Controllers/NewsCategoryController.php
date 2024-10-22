@@ -1,0 +1,204 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\NewsCategory;
+use App\Models\NewsDetails;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Session;
+use Illuminate\Validation\Rule;
+use Yajra\DataTables\Facades\DataTables;
+
+class NewsCategoryController extends Controller
+{
+    public function index(Request $request, $id = '')
+    {
+        $data['title'] = 'Manage News Category';
+        $tableName = (new NewsCategory)->getTable();
+        $data['tablename'] = $tableName;
+
+        if ($id != '') {
+            $id = decrypt($id);
+            $data['editnewscategory'] = NewsCategory::where('id', $id)->first();
+        } else {
+            $data['editnewscategory'] = '';
+        }
+
+         $data['newscategories'] = NewsCategory::where('status', 1)->orderBy('id','desc')->get();
+         if ($request->ajax()) {
+            $data = NewsCategory::orderBy('id', 'desc')
+                ->get();
+
+            return DataTables::of($data)
+                ->addIndexColumn()
+                ->addColumn('status', function ($row) use ($tableName) {
+                   if (auth()->user()->can('newscategory-edit')) {
+                    if ($row->status == 1) {
+
+                        return "<div class='dropdown d-inline-block user-dropdown'>
+                                <button type='button' class='btn text-dark waves-effect' id='page-header-user-dropdown' data-toggle='dropdown' aria-haspopup='true' aria-expanded='false'>
+                                    <div class='badge bg-success-subtle text-success font-size-12'><i class='fa fa-spin fa-spinner' style='display:none' id='PendingSpin{$row->id}'></i>Active</div>
+                                    <i class='fa fa-angle-down'></i>
+                                </button>
+                                <div class='dropdown-menu dropdown-menu-end p-2'>
+                                    <a class='dropdown-item' style='cursor:pointer;' onclick=\"changeStatus('id', '{$row->id}', 'status', '0', '{$tableName}')\">Inactive</a>
+                                </div>
+                            </div>";
+                    } else {
+                        return "<div class='dropdown d-inline-block user-dropdown'>
+                                <button type='button' class='btn text-dark waves-effect' id='page-header-user-dropdown' data-toggle='dropdown' aria-haspopup='true' aria-expanded='false'>
+                                    <span class='d-xl-inline-block ms-1'>
+                                        <div class='badge bg-danger-subtle text-danger font-size-12'><i class='fa fa-spin fa-spinner' style='display:none' id='publicationSpin{$row->id}'></i>Inactive</div>
+                                    </span>
+                                    <i class='fa fa-angle-down'></i>
+                                </button>
+                                <div class='dropdown-menu dropdown-menu-end'>
+                                    <a class='dropdown-item' style='cursor:pointer;' onclick=\"changeStatus('id', '{$row->id}', 'status', '1', '{$tableName}')\">Active</a>
+                                </div>
+                            </div>";
+                    }
+                   }
+                   else{
+                    if ($row->status == 1) {
+
+                    return "<div class='dropdown d-inline-block user-dropdown'>
+                    <button type='button' class='btn text-dark waves-effect' id='page-header-user-dropdown' data-toggle='dropdown' aria-haspopup='true' aria-expanded='false'>
+                        <div class='badge bg-success-subtle text-success font-size-12'><i class='fa fa-spin fa-spinner' style='display:none' id='PendingSpin{$row->id}'></i>Active</div>
+
+                    </button>
+                </div>";
+                } else {
+                    return "<div class='dropdown d-inline-block user-dropdown'>
+                    <button type='button' class='btn text-dark waves-effect' id='page-header-user-dropdown' data-toggle='dropdown' aria-haspopup='true' aria-expanded='false'>
+                        <span class='d-xl-inline-block ms-1'>
+                            <div class='badge bg-danger-subtle text-danger font-size-12'><i class='fa fa-spin fa-spinner' style='display:none' id='publicationSpin{$row->id}'></i>Inactive</div>
+                        </span>
+
+                    </button>
+                </div>";
+                }
+                   }
+                })
+                ->addColumn('action', function ($row) use ($tableName) {
+                    $encryptedId = encrypt($row->id);
+                    $actionBtn = '';
+
+                    // Check if the user has permission to edit
+                    if (auth()->user()->can('newscategory-edit')) {
+                        $actionBtn .= '<a href="' . route('admin.editnewscategory', ['id' => $encryptedId]) . '" class="btn btn-sm btn-outline-secondary">
+                                            <i class="fa fa-edit"></i></a>';
+                    }
+
+                    // Check if the user has permission to delete
+                    if (auth()->user()->can('newscategory-delete')) {
+                        $actionBtn .= ' <a href="javascript:void(0)" onclick="deleteData(\'id\', ' . $row->id . ', \'' . $tableName . '\')" class="btn btn-sm btn-outline-danger">
+                                            <i class="fa fa-trash-o"></i></a>';
+                    }
+                    if (auth()->user()->can('news-view')) {
+                    // Always show the view button (no permission check, modify if needed)
+                    $actionBtn .= ' <a href="' . route('admin.newsdetails', ['newscategory_id' => $row->id]) . '" class="btn btn-sm btn-outline-info">
+                                        <i class="fa fa-eye"></i></a>';
+
+                    }
+                    return $actionBtn;
+                })
+
+                ->setRowAttr([
+                    'data-id' => function ($row) {
+                        return $row->id;
+                    },
+                ])
+                ->rawColumns(['status', 'action'])
+                ->make(true);
+        }
+
+        return view('admin.newscategory', $data);
+    }
+    public function add(Request $request, $id = '')
+    {
+        $data['title'] = 'Manage News Category';
+        $tableName = (new NewsCategory)->getTable();
+        $data['tablename'] = $tableName;
+
+        if ($id != '') {
+            $id = decrypt($id);
+            $data['editnewscategory'] = NewsCategory::where('id', $id)->first();
+        } else {
+            $data['editnewscategory'] = '';
+        }
+
+
+        return view('admin.addnewscategory', $data);
+    }
+
+    public function save(Request $request)
+    {
+        // dd($request->all());
+        $total = NewsCategory::count();
+        $position_by = $total + 1;
+        // Handle file upload
+        // Check if it's an update operation
+        if (!empty($request->id)) {
+            // Validate the incoming request data
+            $request->validate([
+                'name' => ['required', 'string',  'max:255', Rule::unique('categories')->ignore($request->id),],
+            ]);
+            $category = NewsCategory::find($request->id);
+            if (!empty($category)) {
+                $category->update([
+                    'name' => $request->name,
+                ]);
+                Session::flash('success', 'Data updated successfully!');
+            } else {
+                Session::flash('error', 'News Category with ID ' . $request->id . ' not found.');
+            }
+        } else {
+            $request->validate([
+                'name' => 'required|string|max:255|unique:newscategories,name',
+            ]);
+            // Create a new company instance
+            $category = new NewsCategory();
+            $category->name = $request->name;
+            $category->position_by = $position_by;
+            $category->save();
+            Session::flash('success', 'Data added successfully!');
+        }
+        // Redirect back with success or error message
+        return redirect()->route('admin.newscategory');
+    }
+    public function checkNewsCategoryName(Request $request)
+    {
+        $isDuplicate = NewsCategory::where('name', $request->name)
+            ->when($request->id, function ($query) use ($request) {
+                return $query->where('id', '!=', $request->id);
+            })
+            ->exists();
+
+        return response()->json(['isDuplicate' => $isDuplicate]);
+    }
+    public function destroy(Request $request)
+    {
+        // Retrieve the necessary request parameters
+        $where_column = $request->column;
+        $where_id = $request->Id;
+        $where_table = $request->table;
+
+        // Check if any users are assigned to the specified role
+        if (NewsDetails::where('newscategory_id', $where_id)->exists()) {
+            return redirect()->back()->with('error', "Please delete all News assigned to this category before deleting the category.");
+        } else {
+            // Delete the specified record
+            $deleted = DB::table($where_table)
+                ->where($where_column, $where_id)
+                ->delete();
+
+            if ($deleted) {
+                return redirect()->back()->with('success', 'The record has been deleted successfully.');
+            } else {
+                return redirect()->back()->with('error', 'The record could not be deleted.');
+            }
+        }
+    }
+
+}
